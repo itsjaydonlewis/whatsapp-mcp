@@ -12,7 +12,10 @@ from whatsapp import (
     send_message as whatsapp_send_message,
     send_file as whatsapp_send_file,
     send_audio_message as whatsapp_audio_voice_message,
-    download_media as whatsapp_download_media
+    download_media as whatsapp_download_media,
+    get_chat_history_status as whatsapp_get_chat_history_status,
+    request_history_backfill as whatsapp_request_history_backfill,
+    refresh_identity_cache as whatsapp_refresh_identity_cache
 )
 
 # Initialize FastMCP server
@@ -245,6 +248,50 @@ def download_media(message_id: str, chat_jid: str) -> Dict[str, Any]:
             "success": False,
             "message": "Failed to download media"
         }
+
+@mcp.tool()
+def get_chat_history_status(chat_jid: str, limit: int = 100) -> Dict[str, Any]:
+    """Count messages stored locally for one chat and compare that with pagination.
+
+    Use this to tell a short local history from a pagination bug. The stored
+    count is not lifetime WhatsApp history. Linked-device sync often cannot
+    supply the whole chat. On-demand backfill, when an anchor message exists,
+    asks the phone for at most 50 older messages per explicit call.
+
+    Args:
+        chat_jid: Chat JID, for example a phone JID, an @lid JID, or a group JID
+        limit: Page size used to check page 0 and page 1 (default 100)
+    """
+    return whatsapp_get_chat_history_status(chat_jid, limit)
+
+@mcp.tool()
+def refresh_identity_cache() -> Dict[str, Any]:
+    """Reread the local whatsmeow contact and LID stores into the message database.
+
+    This does not send a WhatsApp message, mark chats read, or reset the session.
+    The response contains counts only.
+    """
+    success, message = whatsapp_refresh_identity_cache()
+    return {"success": success, "message": message}
+
+@mcp.tool()
+def request_history_backfill(chat_jid: str, count: int = 50, dry_run: bool = True) -> Dict[str, Any]:
+    """Request one bounded page of older history for a single chat.
+
+    dry_run defaults to true and sends nothing. Set dry_run to false only for
+    one explicit attempt. The bridge then asks this account's primary phone for
+    at most 50 messages immediately before the oldest stored message. WhatsApp
+    may return fewer, none, or say that older messages exist but are not
+    available to a linked device. Do not loop this tool. It does not send a
+    chat message, mark a chat read, or reset the session. A chat with no stored
+    anchor message cannot be backfilled.
+
+    Args:
+        chat_jid: The chat to backfill
+        count: Requested number of older messages, capped at 50
+        dry_run: When true (default), return the plan without sending
+    """
+    return whatsapp_request_history_backfill(chat_jid, count=count, dry_run=dry_run)
 
 if __name__ == "__main__":
     # Initialize and run the server
